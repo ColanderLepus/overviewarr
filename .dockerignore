@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+.dev/
+.git/
+.github/
+.claude/
+.vs/
+DESIGN.md

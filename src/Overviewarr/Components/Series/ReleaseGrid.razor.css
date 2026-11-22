@@ -1,0 +1,16 @@
+.status-icon {
+    display: inline-flex;
+    cursor: help;
+}
+
+.status-icon.rejected {
+    color: var(--rz-danger);
+}
+
+.status-icon.failed {
+    color: var(--rz-danger);
+}
+
+.episodes ::deep .season-pack {
+    margin-left: 0.4rem;
+}

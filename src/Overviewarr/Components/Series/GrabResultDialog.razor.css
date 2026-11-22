@@ -1,0 +1,51 @@
+.results {
+    max-height: 60vh;
+    overflow: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+th {
+    text-align: left;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    background: var(--rz-base-background-color);
+}
+
+th, td {
+    padding: 0.3rem 0.5rem;
+    border-bottom: 1px solid var(--rz-base-300);
+    vertical-align: top;
+}
+
+.title {
+    word-break: break-all;
+}
+
+.outcome {
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.sent {
+    color: var(--rz-success);
+}
+
+.not-found {
+    color: var(--rz-warning);
+}
+
+.refused {
+    color: var(--rz-danger);
+}
+
+.message {
+    font-weight: normal;
+    white-space: normal;
+    color: var(--rz-text-secondary-color);
+}

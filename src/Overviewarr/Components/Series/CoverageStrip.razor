@@ -1,0 +1,133 @@
+@using Overviewarr.Coverage
+@* The coverage strip (DESIGN.md section 8): one row per searched season, one cell per episode. *@
+
+@if (Coverage.Rows.Count > 0)
+{
+    <div class="coverage">
+        <div class="rows">
+            @foreach (var row in Coverage.Rows)
+            {
+                <div class="row">
+                    <span class="label">S@(row.SeasonNumber)</span>
+                    <div class="cells">
+                        @foreach (var cell in row.Cells)
+                        {
+                            var css = CssClass(cell);
+                            var number = cell.Episode.EpisodeNumber.ToString("00");
+
+                            if (cell.IsClickable)
+                            {
+                                <button type="button" class="@css" title="@Tooltip(cell)" @onclick="@(() => CellClick.InvokeAsync(cell))">@number</button>
+                            }
+                            else
+                            {
+                                <span class="@css" title="@Tooltip(cell)">@number</span>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="actions">
+            <RadzenButton Text="Search missing episodes" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small"
+                          Disabled="@(Coverage.Missing.Count == 0)" Click="@(() => SearchMissing.InvokeAsync())" />
+        </div>
+    </div>
+
+    <div class="legend">
+        <span class="item"><span class="cell sample covered"></span>Covered</span>
+        <span class="item"><span class="cell sample not-covered"></span>Not covered</span>
+        <span class="item"><span class="cell sample missing"></span>Missing</span>
+        <span class="item"><span class="cell sample not-aired"></span>Not aired</span>
+        <span class="item"><span class="cell sample not-covered has-file"></span>File</span>
+        <span class="item"><span class="cell sample not-covered in-queue"></span>In queue</span>
+        <span class="item"><span class="cell sample not-covered failed"></span>Failed</span>
+        <span class="item"><span class="cell sample not-covered selected"></span>Selected</span>
+        <span class="item"><span class="cell sample not-covered highlighted"></span>Highlighted</span>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CoverageResult Coverage { get; set; } = CoverageResult.Empty;
+
+    [Parameter] public CellHighlight? Highlight { get; set; }
+
+    [Parameter] public DateTimeOffset Now { get; set; }
+
+    [Parameter] public EventCallback<CoverageCell> CellClick { get; set; }
+
+    [Parameter] public EventCallback SearchMissing { get; set; }
+
+    private string CssClass(CoverageCell cell)
+    {
+        var classes = new List<string>
+        {
+            "cell",
+            cell.State switch
+            {
+                CoverageState.Covered => "covered",
+                CoverageState.NotCovered => "not-covered",
+                CoverageState.Missing => "missing",
+                _ => "not-aired",
+            },
+        };
+
+        if (cell.HasFile) classes.Add("has-file");
+        if (cell.InQueue) classes.Add("in-queue");
+        if (cell.Failed) classes.Add("failed");
+        if (cell.Selected) classes.Add("selected");
+        if (Highlight?.EpisodeId == cell.EpisodeId) classes.Add("highlighted");
+
+        return string.Join(" ", classes);
+    }
+
+    private string Tooltip(CoverageCell cell)
+    {
+        var lines = new List<string>
+        {
+            string.IsNullOrWhiteSpace(cell.Episode.Title) ? cell.Label : $"{cell.Label} – {cell.Episode.Title}",
+            cell.State switch
+            {
+                CoverageState.Covered => cell.MatchingCount == 1 ? "1 matching release" : $"{cell.MatchingCount} matching releases",
+                CoverageState.NotCovered => $"No matching releases ({cell.ReleaseCount} in all)",
+                CoverageState.Missing => "No releases found",
+                _ => cell.Episode.AirDateUtc is { } airDate ? $"Not aired yet: airs {DisplayFormat.Time(airDate, Now)}" : "Not aired yet",
+            },
+        };
+
+        if (cell.FileSummary is not null)
+        {
+            lines.Add($"File: {cell.FileSummary}");
+        }
+
+        if (cell.QueueTitle is not null)
+        {
+            lines.Add($"In queue: {cell.QueueTitle}");
+        }
+
+        if (cell.Failure is not null)
+        {
+            lines.Add($"Download failed: {cell.Failure.Title}");
+            if (!string.IsNullOrWhiteSpace(cell.Failure.Message))
+            {
+                lines.Add(cell.Failure.Message);
+            }
+        }
+
+        switch (cell.EpisodeSearch?.State)
+        {
+            case SearchState.Waiting:
+                lines.Add("Episode search waiting");
+                break;
+            case SearchState.Running:
+                lines.Add("Searching for this episode…");
+                break;
+            case SearchState.Failed:
+                lines.Add($"Episode search failed: {cell.EpisodeSearch.Error}");
+                break;
+        }
+
+        return string.Join("\n", lines);
+    }
+}

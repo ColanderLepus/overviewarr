@@ -1,0 +1,7 @@
+DESIGN.md
+.claude/
+.dev/
+bin/
+obj/
+.vs/
+*.user

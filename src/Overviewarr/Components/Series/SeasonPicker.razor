@@ -1,0 +1,65 @@
+@* The season checkboxes, each with its search state, and the Search button (DESIGN.md section 6). *@
+
+<div class="season-picker">
+    @foreach (var season in Seasons)
+    {
+        var number = season.SeasonNumber;
+        var status = Snapshot.SeasonSearch(number);
+        var id = $"season-{number}";
+
+        <div class="season">
+            <RadzenCheckBox TValue="bool" Name="@id" Value="@Ticked.Contains(number)" Change="@(ticked => Toggle(number, ticked))" />
+            <RadzenLabel Text="@Label(number)" Component="@id" />
+            @switch (status?.State)
+            {
+                case SearchState.Waiting:
+                    <span class="state">Waiting</span>
+                    break;
+                case SearchState.Running:
+                    <span class="state">Searching…</span>
+                    break;
+                case SearchState.Done:
+                    <span class="state">@DisplayFormat.Time(status.FetchedAt!.Value, Now)</span>
+                    break;
+                case SearchState.Failed:
+                    <span class="state failed">Failed: @status.Error</span>
+                    @if (status.Unauthorized)
+                    {
+                        <RadzenLink Path="settings" Text="Settings" />
+                    }
+                    <RadzenButton Text="Retry" Variant="Variant.Text" Size="ButtonSize.ExtraSmall" Click="@(() => Retry.InvokeAsync(number))" />
+                    break;
+            }
+        </div>
+    }
+
+    <RadzenButton Text="Search" ButtonStyle="ButtonStyle.Primary" Disabled="@(Ticked.Count == 0)" Click="@(() => Search.InvokeAsync())" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<SeasonDto> Seasons { get; set; } = [];
+
+    [Parameter, EditorRequired] public HashSet<int> Ticked { get; set; } = [];
+
+    [Parameter, EditorRequired] public SeriesSnapshot Snapshot { get; set; } = SeriesSnapshot.Empty(0);
+
+    [Parameter] public DateTimeOffset Now { get; set; }
+
+    [Parameter] public EventCallback Search { get; set; }
+
+    [Parameter] public EventCallback<int> Retry { get; set; }
+
+    private static string Label(int seasonNumber) => seasonNumber == 0 ? "Specials" : $"Season {seasonNumber}";
+
+    private void Toggle(int seasonNumber, bool ticked)
+    {
+        if (ticked)
+        {
+            Ticked.Add(seasonNumber);
+        }
+        else
+        {
+            Ticked.Remove(seasonNumber);
+        }
+    }
+}

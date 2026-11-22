@@ -1,0 +1,23 @@
+@* An error alert for a failed Sonarr call: the message, a Retry button, and a link to the settings when Sonarr rejected the API key. *@
+
+<RadzenAlert AlertStyle="AlertStyle.Danger" AllowClose="false" Variant="Variant.Flat">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap">
+        <span>@Message</span>
+        @if (IsUnauthorized)
+        {
+            <RadzenLink Path="settings" Text="Settings" />
+        }
+        @if (Retry.HasDelegate)
+        {
+            <RadzenButton Text="Retry" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small" Click="Retry" />
+        }
+    </RadzenStack>
+</RadzenAlert>
+
+@code {
+    [Parameter, EditorRequired] public string Message { get; set; } = string.Empty;
+
+    [Parameter] public bool IsUnauthorized { get; set; }
+
+    [Parameter] public EventCallback Retry { get; set; }
+}

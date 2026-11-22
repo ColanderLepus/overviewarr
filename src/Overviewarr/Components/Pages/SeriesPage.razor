@@ -1,0 +1,466 @@
+@page "/series/{SeriesId:int}"
+@implements IDisposable
+@inject SonarrClient Sonarr
+@inject SearchCache Cache
+@inject TimeProvider Time
+@inject DialogService Dialogs
+
+<PageTitle>@(_series?.Title ?? "Series") – Overviewarr</PageTitle>
+
+@if (_loadError is not null)
+{
+    <SonarrErrorAlert Message="@_loadError.Message" IsUnauthorized="_loadError.IsUnauthorized" Retry="LoadAsync" />
+}
+else if (_series is null)
+{
+    <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+}
+else
+{
+    <h1>@_series.Title (@_series.Year)</h1>
+
+    <div class="notices">
+        @if (_redownload == RedownloadState.On)
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Warning" AllowClose="false" Variant="Variant.Flat">
+                Sonarr is set to grab a replacement by itself when a download fails. Turn off Redownload Failed from Interactive Search
+                in Sonarr (Settings → Download Clients) to grab here.
+            </RadzenAlert>
+        }
+        else if (_redownload == RedownloadState.Unknown)
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Warning" AllowClose="false" Variant="Variant.Flat">
+                Couldn't read Sonarr's failed-download settings: @_redownloadError
+            </RadzenAlert>
+        }
+
+        @if (_profile?.UpgradeAllowed == true)
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Info" AllowClose="false" Variant="Variant.Flat">
+                Quality profile @_profile.Name allows upgrades. Sonarr may replace grabbed releases with upgrades.
+            </RadzenAlert>
+        }
+        else if (_profileError is not null)
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Info" AllowClose="false" Variant="Variant.Flat">
+                Couldn't read the quality profile: @_profileError
+            </RadzenAlert>
+        }
+    </div>
+
+    @if (_downloads.FailedDownloads.Count > 0)
+    {
+        <RadzenAlert AlertStyle="AlertStyle.Danger" AllowClose="false" Variant="Variant.Flat" Title="Failed downloads">
+            <table class="failed-downloads">
+                @foreach (var failure in _downloads.FailedDownloads)
+                {
+                    <tr>
+                        <td class="title">@failure.Title</td>
+                        <td class="episodes">@FailedEpisodesText(failure)</td>
+                        <td>@failure.Message</td>
+                        <td class="time">@DisplayFormat.Time(failure.Date, _now)</td>
+                    </tr>
+                }
+            </table>
+        </RadzenAlert>
+    }
+
+    <SeasonPicker Seasons="_seasons" Ticked="_ticked!" Snapshot="_view.Snapshot" Now="_now" Search="SearchTicked" Retry="SearchSeason" />
+
+    @if (_downloadsError is not null)
+    {
+        <div class="downloads-error">Couldn't update downloads: @_downloadsError</div>
+    }
+
+    <CoverageStrip Coverage="_view.Coverage" Highlight="_view.Highlight" Now="_now" CellClick="OnCellClick" SearchMissing="SearchMissing" />
+
+    <div class="filter-builder">
+        <RadzenDataFilter @ref="_filter" TItem="ReleaseRecord" Data="@_view.Snapshot.Releases" Auto="true" ViewChanged="OnFilterChanged">
+            <Properties>
+                @foreach (var field in FilterFields.All)
+                {
+                    <RadzenDataFilterProperty TItem="ReleaseRecord" Property="@field.Property" Title="@field.Title"
+                                              Type="@field.Type" FilterOperators="@field.Operators" />
+                }
+            </Properties>
+        </RadzenDataFilter>
+    </div>
+
+    <div class="grab-bar">
+        <RadzenButton Text="@($"Grab ({_selection.Count})")" ButtonStyle="ButtonStyle.Primary" Disabled="@GrabDisabled"
+                      IsBusy="_sending" BusyText="@_sendProgress" Click="GrabAsync" />
+    </div>
+
+    @if (_view.IsGapView)
+    {
+        <RadzenAlert AlertStyle="AlertStyle.Info" AllowClose="false" Variant="Variant.Flat">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap">
+                <span>All releases for @_view.EpisodeLabel(_view.Highlight!.EpisodeId). Filters set aside.</span>
+                <RadzenButton Text="End gap view" ButtonStyle="ButtonStyle.Info" Size="ButtonSize.Small" Click="EndGapView" />
+            </RadzenStack>
+        </RadzenAlert>
+
+        <ReleaseGrid Data="_view.GapData" AllowFiltering="false" ColumnVisibility="_gapColumns"
+                     Selection="_selection" SelectionChanged="OnSelectionChanged" FailedReleases="_downloads.FailedReleases" />
+    }
+
+    <div class="@(_view.IsGapView ? "hidden" : null)">
+        <ReleaseGrid @ref="_mainGrid" Data="_view.GridData" FilterChanged="Recalculate"
+                     Selection="_selection" SelectionChanged="OnSelectionChanged" FailedReleases="_downloads.FailedReleases" />
+    </div>
+}
+
+@code {
+    private enum RedownloadState
+    {
+        Checking,
+        Off,
+        On,
+        Unknown,
+    }
+
+    [Parameter] public int SeriesId { get; set; }
+
+    private int? _openSeriesId;
+    private IDisposable? _pageHandle;
+    private bool _disposed;
+
+    private SeriesDto? _series;
+    private List<SeasonDto> _seasons = [];
+    private SonarrException? _loadError;
+    private HashSet<int>? _ticked;
+
+    private RedownloadState _redownload = RedownloadState.Checking;
+    private string? _redownloadError;
+    private QualityProfileDto? _profile;
+    private string? _profileError;
+
+    private SeriesView _view = new();
+    private DateTimeOffset _now;
+    private RadzenDataFilter<ReleaseRecord>? _filter;
+    private ReleaseGrid? _mainGrid;
+    private IReadOnlyDictionary<string, bool>? _gapColumns;
+
+    private readonly HashSet<ReleaseKey> _selection = [];
+    private bool _sending;
+    private string _sendProgress = "Grabbing…";
+
+    private DownloadTracker _downloads = new(0, DateTimeOffset.UnixEpoch);
+    private bool _historyLoaded;
+    private string? _downloadsError;
+    private CancellationTokenSource? _polling;
+
+    private bool GrabDisabled => _selection.Count == 0 || _redownload != RedownloadState.Off || _sending;
+
+    protected override void OnInitialized()
+    {
+        Cache.SeriesChanged += OnSeriesChanged;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_openSeriesId == SeriesId)
+        {
+            return;
+        }
+
+        _pageHandle?.Dispose();
+        _pageHandle = Cache.Open(SeriesId);
+        _openSeriesId = SeriesId;
+        StopPolling();
+
+        _series = null;
+        _ticked = null;
+        _filter = null;
+        _view = new SeriesView();
+        _selection.Clear();
+        _redownload = RedownloadState.Checking;
+        _profile = null;
+        _profileError = null;
+        _downloads = new DownloadTracker(SeriesId, Time.GetUtcNow());
+        _historyLoaded = false;
+        _downloadsError = null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+        _series = null;
+
+        try
+        {
+            var series = Sonarr.GetSeriesByIdAsync(SeriesId);
+            var episodes = Sonarr.GetEpisodesAsync(SeriesId);
+            var episodeFiles = Sonarr.GetEpisodeFilesAsync(SeriesId);
+            var redownload = ReadRedownloadSettingAsync();
+            await Task.WhenAll(series, episodes, episodeFiles);
+
+            _view.SetEpisodes(episodes.Result, episodeFiles.Result);
+            _seasons = (series.Result.Seasons ?? []).OrderBy(s => s.SeasonNumber).ToList();
+            _ticked ??= _seasons.Where(s => s.Monitored).Select(s => s.SeasonNumber).ToHashSet();
+            _series = series.Result;
+            Recalculate();
+            StartPolling();
+
+            await Task.WhenAll(redownload, ReadQualityProfileAsync(series.Result.QualityProfileId));
+        }
+        catch (SonarrException exception)
+        {
+            _loadError = exception;
+        }
+    }
+
+    private async Task ReadRedownloadSettingAsync()
+    {
+        try
+        {
+            var config = await Sonarr.GetDownloadClientConfigAsync();
+            _redownload = config.RedownloadsFailedInteractiveGrabs ? RedownloadState.On : RedownloadState.Off;
+            _redownloadError = null;
+        }
+        catch (SonarrException exception)
+        {
+            _redownload = RedownloadState.Unknown;
+            _redownloadError = exception.Message;
+        }
+    }
+
+    private async Task ReadQualityProfileAsync(int qualityProfileId)
+    {
+        try
+        {
+            _profile = await Sonarr.GetQualityProfileAsync(qualityProfileId);
+            _profileError = null;
+        }
+        catch (SonarrException exception)
+        {
+            _profile = null;
+            _profileError = exception.Message;
+        }
+    }
+
+    /// <summary>Reads the queue and history now, then every 5 seconds while the page is open (DESIGN.md section 10).</summary>
+    private void StartPolling()
+    {
+        if (_polling is not null)
+        {
+            return;
+        }
+
+        _polling = new CancellationTokenSource();
+        _ = PollAsync(_polling.Token);
+    }
+
+    private void StopPolling()
+    {
+        _polling?.Cancel();
+        _polling?.Dispose();
+        _polling = null;
+    }
+
+    private async Task PollAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5), Time);
+
+        try
+        {
+            do
+            {
+                await UpdateDownloadsAsync(cancellationToken);
+            }
+            while (await timer.WaitForNextTickAsync(cancellationToken));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task UpdateDownloadsAsync(CancellationToken cancellationToken)
+    {
+        var downloads = _downloads;
+
+        try
+        {
+            if (!_historyLoaded)
+            {
+                var history = await Sonarr.GetSeriesHistoryAsync(SeriesId, cancellationToken);
+                downloads.AddSeriesHistory(history.Records ?? []);
+                _historyLoaded = true;
+            }
+
+            var queue = Sonarr.GetQueueAsync(SeriesId, cancellationToken);
+            var since = Sonarr.GetHistorySinceAsync(downloads.SinceStart, cancellationToken);
+            await Task.WhenAll(queue, since);
+
+            downloads.SetQueue(queue.Result.Records ?? []);
+            if (downloads.AddHistorySince(since.Result))
+            {
+                var episodes = Sonarr.GetEpisodesAsync(SeriesId, cancellationToken);
+                var episodeFiles = Sonarr.GetEpisodeFilesAsync(SeriesId, cancellationToken);
+                await Task.WhenAll(episodes, episodeFiles);
+                _view.SetEpisodes(episodes.Result, episodeFiles.Result);
+            }
+
+            _downloadsError = null;
+        }
+        catch (SonarrException exception)
+        {
+            _downloadsError = exception.Message;
+        }
+
+        if (!_disposed && !cancellationToken.IsCancellationRequested && ReferenceEquals(downloads, _downloads))
+        {
+            Recalculate();
+            StateHasChanged();
+        }
+    }
+
+    private string FailedEpisodesText(FailedDownload failure) =>
+        EpisodeRanges.Format(failure.EpisodeIds.Select(_view.FindEpisode).OfType<ReleaseEpisode>());
+
+    private void SearchTicked()
+    {
+        foreach (var seasonNumber in _ticked!.Order())
+        {
+            _ = Cache.RequestSearch(SearchKey.Season(SeriesId, seasonNumber));
+        }
+    }
+
+    private void SearchSeason(int seasonNumber) => _ = Cache.RequestSearch(SearchKey.Season(SeriesId, seasonNumber));
+
+    private void SearchMissing()
+    {
+        foreach (var cell in _view.Coverage.Missing)
+        {
+            SearchEpisode(cell);
+        }
+    }
+
+    private void SearchEpisode(CoverageCell cell) =>
+        _ = Cache.RequestSearch(SearchKey.Episode(SeriesId, cell.Episode.SeasonNumber, cell.EpisodeId));
+
+    private void OnCellClick(CoverageCell cell)
+    {
+        var wasGapView = _view.IsGapView;
+        if (_view.Click(cell))
+        {
+            SearchEpisode(cell);
+        }
+
+        if (_view.IsGapView && !wasGapView)
+        {
+            _gapColumns = _mainGrid?.CurrentColumnVisibility();
+        }
+    }
+
+    private void EndGapView() => _view.EndGapView();
+
+    private void OnSelectionChanged(SelectionChange change)
+    {
+        if (change.Selected)
+        {
+            _selection.UnionWith(change.Keys);
+        }
+        else
+        {
+            _selection.ExceptWith(change.Keys);
+        }
+
+        Recalculate();
+    }
+
+    private async Task GrabAsync()
+    {
+        var selected = _view.Snapshot.Releases.Where(r => _selection.Contains(r.Key)).ToList();
+        if (selected.Count == 0)
+        {
+            return;
+        }
+
+        var warnings = ConfirmationWarnings.Calculate(selected, _view.Episodes, _view.Snapshot,
+            _downloads.QueueTitles.Keys.ToHashSet(), Time.GetUtcNow());
+        object? confirmed = await Dialogs.OpenAsync<ConfirmGrabDialog>($"Grab {selected.Count} releases",
+            new Dictionary<string, object?> { ["Releases"] = selected, ["Warnings"] = warnings },
+            new DialogOptions { Width = "800px" });
+
+        if (confirmed is not true)
+        {
+            return;
+        }
+
+        _sending = true;
+        _sendProgress = "Checking Sonarr…";
+        try
+        {
+            await ReadRedownloadSettingAsync();
+            if (_redownload != RedownloadState.Off)
+            {
+                return;
+            }
+
+            var progress = new Progress<string>(text =>
+            {
+                _sendProgress = text;
+                if (!_disposed)
+                {
+                    StateHasChanged();
+                }
+            });
+
+            var sender = new GrabSender(key => Cache.RequestSearch(key), release => Sonarr.GrabReleaseAsync(release.Guid, release.IndexerId));
+            var results = await sender.SendAsync(selected, Cache.GetSnapshot(SeriesId), Time.GetUtcNow(), progress);
+
+            _selection.ExceptWith(results.Where(r => r.Outcome == GrabOutcome.Sent).Select(r => r.Release.Key));
+            Recalculate();
+
+            if (!_disposed)
+            {
+                _sending = false;
+                StateHasChanged();
+                await Dialogs.OpenAsync<GrabResultDialog>("Grab results",
+                    new Dictionary<string, object?> { ["Results"] = results },
+                    new DialogOptions { Width = "800px" });
+            }
+        }
+        finally
+        {
+            _sending = false;
+        }
+    }
+
+    private void OnFilterChanged(IQueryable<ReleaseRecord> _) => Recalculate();
+
+    private void OnSeriesChanged(int seriesId)
+    {
+        if (seriesId == SeriesId)
+        {
+            _ = InvokeAsync(() =>
+            {
+                Recalculate();
+                StateHasChanged();
+            });
+        }
+    }
+
+    /// <summary>Recalculates the builder's result, the matching set, the strip and the grids.</summary>
+    private void Recalculate()
+    {
+        var snapshot = Cache.GetSnapshot(SeriesId);
+        _selection.IntersectWith(snapshot.Releases.Select(r => r.Key));
+
+        var builderResult = FilterEvaluator.Apply(snapshot.Releases, _filter?.Filters, _filter?.LogicalFilterOperator ?? LogicalFilterOperator.And);
+        var matching = _mainGrid?.ApplyColumnFilters(builderResult) ?? builderResult;
+
+        _now = Time.GetUtcNow();
+        _view.Update(snapshot, builderResult, matching, _now, _selection, _downloads);
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        StopPolling();
+        Cache.SeriesChanged -= OnSeriesChanged;
+        _pageHandle?.Dispose();
+    }
+}

@@ -1,0 +1,48 @@
+@* The confirmation dialog (DESIGN.md section 9). Closes with true for Grab, false for Cancel. *@
+@inject DialogService Dialogs
+
+<RadzenStack Gap="1rem">
+    @if (Warnings.Overlaps.Count > 0)
+    {
+        <RadzenAlert AlertStyle="AlertStyle.Warning" AllowClose="false" Variant="Variant.Flat" Title="Episodes in more than one selected release">
+            <ul class="warnings">
+                @foreach (var overlap in Warnings.Overlaps)
+                {
+                    <li><strong>@overlap.Label</strong>: @string.Join(", ", overlap.Releases.Select(r => r.Title))</li>
+                }
+            </ul>
+        </RadzenAlert>
+    }
+
+    @if (Warnings.Gaps.Count > 0)
+    {
+        <RadzenAlert AlertStyle="AlertStyle.Warning" AllowClose="false" Variant="Variant.Flat" Title="Aired episodes with no file, no download and no selected release">
+            @string.Join(", ", Warnings.Gaps.Select(e => EpisodeLabels.Format(e.SeasonNumber, e.EpisodeNumber)))
+        </RadzenAlert>
+    }
+
+    <div class="releases">
+        <table>
+            <thead>
+                <tr><th>Release</th><th>Episodes</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var release in Releases)
+                {
+                    <tr><td class="title">@release.Title</td><td class="episodes">@release.EpisodesText</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem">
+        <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@(() => Dialogs.Close(false))" />
+        <RadzenButton Text="Grab" ButtonStyle="ButtonStyle.Primary" Click="@(() => Dialogs.Close(true))" />
+    </RadzenStack>
+</RadzenStack>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ReleaseRecord> Releases { get; set; } = [];
+
+    [Parameter, EditorRequired] public ConfirmationWarnings Warnings { get; set; } = new([], []);
+}

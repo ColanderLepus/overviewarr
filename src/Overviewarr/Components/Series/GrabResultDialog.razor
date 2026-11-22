@@ -1,0 +1,56 @@
+@* The result dialog (DESIGN.md section 9): every release with its outcome. *@
+@inject DialogService Dialogs
+
+<RadzenStack Gap="1rem">
+    <RadzenText>@Summary</RadzenText>
+
+    <div class="results">
+        <table>
+            <thead>
+                <tr><th>Release</th><th>Outcome</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var result in Results)
+                {
+                    <tr>
+                        <td class="title">@result.Release.Title</td>
+                        <td class="@OutcomeClass(result.Outcome)">
+                            @OutcomeText(result.Outcome)
+                            @if (!string.IsNullOrEmpty(result.Message))
+                            {
+                                <div class="message">@result.Message</div>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End">
+        <RadzenButton Text="Close" ButtonStyle="ButtonStyle.Primary" Click="@(() => Dialogs.Close())" />
+    </RadzenStack>
+</RadzenStack>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<GrabResult> Results { get; set; } = [];
+
+    private string Summary =>
+        $"{Count(GrabOutcome.Sent)} sent, {Count(GrabOutcome.NotFound)} not found, {Count(GrabOutcome.Refused)} refused.";
+
+    private int Count(GrabOutcome outcome) => Results.Count(r => r.Outcome == outcome);
+
+    private static string OutcomeText(GrabOutcome outcome) => outcome switch
+    {
+        GrabOutcome.Sent => "Sent",
+        GrabOutcome.NotFound => "Not found",
+        _ => "Refused",
+    };
+
+    private static string OutcomeClass(GrabOutcome outcome) => outcome switch
+    {
+        GrabOutcome.Sent => "outcome sent",
+        GrabOutcome.NotFound => "outcome not-found",
+        _ => "outcome refused",
+    };
+}

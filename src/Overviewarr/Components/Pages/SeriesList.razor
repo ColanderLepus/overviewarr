@@ -1,0 +1,68 @@
+@page "/"
+@inject SonarrClient Sonarr
+@inject NavigationManager Navigation
+
+<PageTitle>Series – Overviewarr</PageTitle>
+
+<h1>Series</h1>
+
+@if (_error is not null)
+{
+    <SonarrErrorAlert Message="@_error.Message" IsUnauthorized="_error.IsUnauthorized" Retry="LoadAsync" />
+}
+else if (_series is null)
+{
+    <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+}
+else
+{
+    <RadzenStack Gap="1rem">
+        <RadzenTextBox @bind-Value="_filter" Immediate="true" Placeholder="Filter by title" Style="max-width: 24rem" />
+        <RadzenDataGrid TItem="SeriesDto" Data="@FilteredSeries" RowClick="@(args => Open(args.Data))"
+                        AllowVirtualization="true" Style="height: calc(100vh - 14rem)" class="series-list">
+            <Columns>
+                <RadzenDataGridColumn TItem="SeriesDto" Property="@nameof(SeriesDto.Title)" Title="Title" />
+                <RadzenDataGridColumn TItem="SeriesDto" Property="@nameof(SeriesDto.Year)" Title="Year" Width="7rem" />
+            </Columns>
+        </RadzenDataGrid>
+    </RadzenStack>
+}
+
+@code {
+    private List<SeriesDto>? _series;
+    private SonarrException? _error;
+    private string? _filter;
+
+    private IEnumerable<SeriesDto> FilteredSeries =>
+        string.IsNullOrWhiteSpace(_filter)
+            ? _series!
+            : _series!.Where(s => s.Title.Contains(_filter.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _series = null;
+
+        try
+        {
+            var series = await Sonarr.GetSeriesAsync();
+            _series = series
+                .OrderBy(s => s.SortTitle ?? s.Title, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (SonarrException exception)
+        {
+            _error = exception;
+        }
+    }
+
+    private void Open(SeriesDto? series)
+    {
+        if (series is not null)
+        {
+            Navigation.NavigateTo($"series/{series.Id}");
+        }
+    }
+}

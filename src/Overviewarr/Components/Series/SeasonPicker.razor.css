@@ -1,0 +1,22 @@
+.season-picker {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.season {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.state {
+    color: var(--rz-text-secondary-color);
+    font-size: 0.875rem;
+}
+
+.state.failed {
+    color: var(--rz-danger);
+}

@@ -1,0 +1,147 @@
+@page "/settings"
+@inject SettingsStore Store
+@inject SonarrClient Sonarr
+
+<PageTitle>Settings – Overviewarr</PageTitle>
+
+<h1>Settings</h1>
+
+@if (Store.LoadError is not null)
+{
+    <RadzenAlert AlertStyle="AlertStyle.Danger" AllowClose="false" Variant="Variant.Flat">
+        settings.json couldn't be read: @Store.LoadError. Saving replaces it.
+    </RadzenAlert>
+}
+
+<h2>Sonarr</h2>
+
+<RadzenStack Gap="1rem" Style="max-width: 36rem">
+    <RadzenFormField Text="URL" Variant="Variant.Outlined">
+        <RadzenTextBox @bind-Value="_url" Immediate="true" Style="width: 100%" />
+    </RadzenFormField>
+
+    <RadzenStack Gap="0.25rem">
+        <RadzenFormField Text="API key" Variant="Variant.Outlined">
+            <RadzenPassword @bind-Value="_apiKey" Immediate="true" Placeholder="@ApiKeyPlaceholder" Style="width: 100%" />
+        </RadzenFormField>
+        @if (Store.IsConfigured && ApiKeyRequired)
+        {
+            <RadzenText TextStyle="TextStyle.Caption">The URL has changed, so the API key must be entered again.</RadzenText>
+        }
+    </RadzenStack>
+
+    <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem">
+        <RadzenButton Text="Test" ButtonStyle="ButtonStyle.Light" Click="TestAsync" IsBusy="_testing" BusyText="Testing…" />
+        <RadzenButton Text="Save" ButtonStyle="ButtonStyle.Primary" Click="SaveAsync" Disabled="!CanSave" IsBusy="_saving" />
+    </RadzenStack>
+
+    @if (_testMessage is not null)
+    {
+        <RadzenText Style="@(_testSucceeded ? "color: var(--rz-success)" : "color: var(--rz-danger)")">@_testMessage</RadzenText>
+    }
+
+    @if (_saveError is not null)
+    {
+        <RadzenAlert AlertStyle="AlertStyle.Danger" AllowClose="false" Variant="Variant.Flat">
+            Saving failed: @_saveError
+        </RadzenAlert>
+    }
+    else if (_saved)
+    {
+        <RadzenText Style="color: var(--rz-success)">Saved.</RadzenText>
+    }
+</RadzenStack>
+
+@code {
+    private string _url = string.Empty;
+    private string _apiKey = string.Empty;
+
+    private bool _testing;
+    private bool _testSucceeded;
+    private string? _testMessage;
+    private (string Url, string ApiKey)? _testedValues;
+
+    private bool _saving;
+    private bool _saved;
+    private string? _saveError;
+
+    private string? ApiKeyPlaceholder => Store.IsConfigured ? "••••••••••••••••" : null;
+
+    private bool ApiKeyRequired =>
+        !SettingsRules.TryNormalizeUrl(_url, out var url, out _) || SettingsRules.IsApiKeyRequired(url, Store.Connection);
+
+    private bool CanSave =>
+        _testSucceeded && _testedValues is { } tested && tested.Url == _url && tested.ApiKey == _apiKey;
+
+    protected override void OnInitialized()
+    {
+        _url = Store.Connection?.Url ?? SettingsRules.DefaultUrl;
+    }
+
+    private async Task TestAsync()
+    {
+        _saved = false;
+        _saveError = null;
+        _testSucceeded = false;
+        _testedValues = null;
+
+        if (!TryReadForm(out var url, out var apiKey, out var error))
+        {
+            _testMessage = error;
+            return;
+        }
+
+        _testing = true;
+        try
+        {
+            var version = await Sonarr.TestConnectionAsync(url, apiKey);
+            _testSucceeded = true;
+            _testMessage = $"Connected to Sonarr {version}.";
+            _testedValues = (_url, _apiKey);
+        }
+        catch (SonarrException exception)
+        {
+            _testMessage = exception.Message;
+        }
+        finally
+        {
+            _testing = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!CanSave || !TryReadForm(out var url, out var apiKey, out _))
+        {
+            return;
+        }
+
+        _saving = true;
+        _saveError = null;
+        try
+        {
+            await Store.SaveAsync(new SonarrConnection(url, apiKey));
+            _saved = true;
+            _url = url;
+            _apiKey = string.Empty;
+            _testSucceeded = false;
+            _testedValues = null;
+            _testMessage = null;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            _saveError = exception.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private bool TryReadForm(out string url, out string apiKey, out string? error)
+    {
+        apiKey = string.Empty;
+        return SettingsRules.TryNormalizeUrl(_url, out url, out error) &&
+               SettingsRules.TryResolveApiKey(url, _apiKey, Store.Connection, out apiKey, out error);
+    }
+}

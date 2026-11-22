@@ -1,0 +1,57 @@
+﻿@inherits LayoutComponentBase
+@inject SettingsStore Settings
+@inject NavigationManager Navigation
+
+<RadzenComponents />
+
+<header class="app-header">
+    <a class="app-name" href="">Overviewarr</a>
+    <nav class="app-nav">
+        <a href="">Series</a>
+        <a href="settings">Settings</a>
+    </nav>
+</header>
+
+<main class="app-body">
+    <ErrorBoundary @ref="_errorBoundary">
+        <ChildContent>
+            @if (Settings.IsConfigured || IsSettingsPage)
+            {
+                @Body
+            }
+        </ChildContent>
+        <ErrorContent Context="exception">
+            <RadzenAlert AlertStyle="AlertStyle.Danger" AllowClose="false" Variant="Variant.Flat">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                    <span>Something went wrong: @exception.Message</span>
+                    <RadzenButton Text="Reload" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small" Click="Reload" />
+                </RadzenStack>
+            </RadzenAlert>
+        </ErrorContent>
+    </ErrorBoundary>
+</main>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private ErrorBoundary? _errorBoundary;
+
+    private bool IsSettingsPage =>
+        Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].Equals("settings", StringComparison.OrdinalIgnoreCase);
+
+    protected override void OnParametersSet()
+    {
+        _errorBoundary?.Recover();
+
+        if (!Settings.IsConfigured && !IsSettingsPage)
+        {
+            Navigation.NavigateTo("settings", replace: true);
+        }
+    }
+
+    private void Reload() => Navigation.Refresh(forceReload: true);
+}
