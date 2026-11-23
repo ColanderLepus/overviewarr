@@ -1,3 +1,4 @@
+using Overviewarr.Releases;
 using Overviewarr.Sonarr;
 
 namespace Overviewarr.Downloads;
@@ -18,6 +19,7 @@ public sealed class DownloadTracker
     private readonly HashSet<int> _seen = [];
     private readonly Dictionary<int, HistoryDto> _lastDownload = [];
     private readonly Dictionary<string, HistoryDto> _grabs = new(StringComparer.Ordinal);
+    private readonly List<HistoryDto> _failures = [];
 
     public DownloadTracker(int seriesId, DateTimeOffset pageOpened)
     {
@@ -37,24 +39,32 @@ public sealed class DownloadTracker
     /// <summary>Episodes whose last download failed.</summary>
     public IReadOnlyDictionary<int, FailedDownload> FailedEpisodes { get; private set; } = new Dictionary<int, FailedDownload>();
 
-    /// <summary>Failed downloads by the <c>data.guid</c> of their <c>grabbed</c> entry.</summary>
-    public IReadOnlyDictionary<string, FailedDownload> FailedReleases { get; private set; } = new Dictionary<string, FailedDownload>();
+    /// <summary>
+    /// The newest failure of every release with a failed download in the history, by the <c>data.guid</c> of the
+    /// failed download's <c>grabbed</c> entry. A release stays here after a replacement is grabbed.
+    /// </summary>
+    public IReadOnlyDictionary<string, ReleaseFailure> FailedReleases { get; private set; } = new Dictionary<string, ReleaseFailure>();
 
     /// <summary>Adds the series' download history, read when the page opens.</summary>
     public void AddSeriesHistory(IEnumerable<HistoryDto> entries)
     {
+        var changed = false;
         foreach (var entry in entries.Where(e => e.SeriesId == _seriesId))
         {
-            Process(entry);
+            changed |= Process(entry);
         }
 
-        Rebuild();
+        if (changed)
+        {
+            Rebuild();
+        }
     }
 
     /// <summary>Adds the entries of a <c>history/since</c> call. Returns true when a new import of this series arrived.</summary>
     public bool AddHistorySince(IEnumerable<HistoryDto> entries)
     {
         var imported = false;
+        var changed = false;
 
         foreach (var entry in entries)
         {
@@ -63,13 +73,18 @@ public sealed class DownloadTracker
                 SinceStart = entry.Date;
             }
 
-            if (entry.SeriesId == _seriesId && Process(entry) && entry.Is(HistoryDto.DownloadFolderImported))
+            if (entry.SeriesId == _seriesId && Process(entry))
             {
-                imported = true;
+                changed = true;
+                imported |= entry.Is(HistoryDto.DownloadFolderImported);
             }
         }
 
-        Rebuild();
+        if (changed)
+        {
+            Rebuild();
+        }
+
         return imported;
     }
 
@@ -102,6 +117,11 @@ public sealed class DownloadTracker
             _grabs[entry.DownloadId] = entry;
         }
 
+        if (entry.Is(HistoryDto.DownloadFailed))
+        {
+            _failures.Add(entry);
+        }
+
         return true;
     }
 
@@ -123,15 +143,29 @@ public sealed class DownloadTracker
             .SelectMany(f => f.EpisodeIds.Select(id => (EpisodeId: id, Failure: f)))
             .ToDictionary(x => x.EpisodeId, x => x.Failure);
 
-        var failedReleases = new Dictionary<string, FailedDownload>(StringComparer.Ordinal);
-        foreach (var failure in FailedDownloads)
+        var failedReleases = new Dictionary<string, ReleaseFailure>(StringComparer.Ordinal);
+        foreach (var failure in _failures.OrderByDescending(e => e.Id))
         {
-            if (_grabs.TryGetValue(failure.DownloadId, out var grab) && grab.GetData("guid") is { Length: > 0 } guid)
+            if (!string.IsNullOrEmpty(failure.DownloadId) && _grabs.TryGetValue(failure.DownloadId, out var grab) &&
+                grab.GetData("guid") is { Length: > 0 } guid)
             {
-                failedReleases.TryAdd(guid, failure);
+                failedReleases.TryAdd(guid, new ReleaseFailure(failure.GetData("message"), failure.Date));
             }
         }
 
         FailedReleases = failedReleases;
+    }
+
+    /// <summary>The releases, with <see cref="ReleaseRecord.Failure"/> set on each release with a failed download.</summary>
+    public IReadOnlyList<ReleaseRecord> MarkFailures(IReadOnlyList<ReleaseRecord> releases)
+    {
+        if (FailedReleases.Count == 0)
+        {
+            return releases;
+        }
+
+        return releases
+            .Select(r => FailedReleases.TryGetValue(r.Guid, out var failure) ? r with { Failure = failure } : r)
+            .ToList();
     }
 }

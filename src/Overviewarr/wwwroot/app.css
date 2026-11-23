@@ -37,6 +37,15 @@ h1:focus {
     padding: 1.5rem;
 }
 
+/* The column picker is at the left end of the release grid's header bar, and the grid switches come right after it. */
+.release-grid .rz-group-header {
+    justify-content: flex-start;
+}
+
+.release-grid .rz-column-picker {
+    order: -1;
+}
+
 #blazor-error-ui {
     color-scheme: light only;
     background: lightyellow;

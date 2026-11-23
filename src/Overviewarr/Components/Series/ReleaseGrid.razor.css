@@ -10,7 +10,3 @@
 .status-icon.failed {
     color: var(--rz-danger);
 }
-
-.episodes ::deep .season-pack {
-    margin-left: 0.4rem;
-}

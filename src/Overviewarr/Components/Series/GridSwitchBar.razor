@@ -1,0 +1,28 @@
+@* The grid switches in the release grid's header bar (DESIGN.md section 8, Grid switches). *@
+
+<div class="grid-switches">
+    <RadzenSelectBar TValue="bool" Value="@Switches.SeasonPacks" Change="@(value => Changed.InvokeAsync(Switches with { SeasonPacks = value }))"
+                     Disabled="@(!SeasonPacksAvailable)" Size="ButtonSize.Small" AriaLabel="Releases shown">
+        <Items>
+            <RadzenSelectBarItem Text="Single episodes" Value="@false" />
+            <RadzenSelectBarItem Text="Season packs" Value="@true" />
+        </Items>
+    </RadzenSelectBar>
+    <span class="unwanted-qualities">
+        <RadzenSwitch Name="@_switchId" Value="@Switches.ShowUnwantedQualities"
+                      Change="@(value => Changed.InvokeAsync(Switches with { ShowUnwantedQualities = value }))" />
+        <RadzenLabel Text="Show unwanted qualities" Component="@_switchId" />
+    </span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public GridSwitches Switches { get; set; } = GridSwitches.Starting;
+
+    /// <summary>Whether Season packs can be chosen.</summary>
+    [Parameter] public bool SeasonPacksAvailable { get; set; }
+
+    [Parameter] public EventCallback<GridSwitches> Changed { get; set; }
+
+    /// <summary>The switch's input id, for its label. Unique per bar, since both grids show one.</summary>
+    private readonly string _switchId = $"show-unwanted-qualities-{Guid.NewGuid():N}";
+}

@@ -47,8 +47,11 @@ public sealed class SeriesView
     /// <summary>The main grid's data: the filter builder's result, narrowed by the episode filter.</summary>
     public IReadOnlyList<ReleaseRecord> GridData { get; private set; } = [];
 
-    /// <summary>The gap view's data: every release that covers the episode.</summary>
+    /// <summary>The gap view's data: every release the grid switches let through that covers the episode.</summary>
     public IReadOnlyList<ReleaseRecord> GapData { get; private set; } = [];
+
+    /// <summary>The releases the grid switches let through, as the page marked them (DESIGN.md section 11).</summary>
+    public IReadOnlyList<ReleaseRecord> Releases { get; private set; } = [];
 
     public bool IsGapView => Highlight?.Mode == HighlightMode.GapView;
 
@@ -59,11 +62,16 @@ public sealed class SeriesView
         _files = files.ToDictionary(f => f.Id);
     }
 
-    /// <summary>Recalculates everything from a snapshot, the builder's result, the matching set and the selection.</summary>
+    /// <summary>
+    /// Recalculates everything from a snapshot, the builder's result, the matching set and the selection.
+    /// <paramref name="releases"/> are the releases the grid switches let through, as the page marked them; the snapshot's own by default.
+    /// </summary>
     public void Update(SeriesSnapshot snapshot, IReadOnlyList<ReleaseRecord> builderResult, IEnumerable<ReleaseRecord> matching,
-        DateTimeOffset now, IReadOnlySet<ReleaseKey>? selected = null, DownloadTracker? downloads = null)
+        DateTimeOffset now, IReadOnlySet<ReleaseKey>? selected = null, DownloadTracker? downloads = null,
+        IReadOnlyList<ReleaseRecord>? releases = null)
     {
         Snapshot = snapshot;
+        Releases = releases ?? snapshot.Releases;
         BuilderResult = builderResult;
         Matching = matching.Select(r => r.Key).ToHashSet();
         Coverage = CoverageCalculator.Calculate(new CoverageInput(_episodes, _files, snapshot, Matching, now)
@@ -123,7 +131,7 @@ public sealed class SeriesView
     private void UpdateGrids()
     {
         GridData = Highlight is { Mode: HighlightMode.EpisodeFilter } filter ? Covering(BuilderResult, filter.EpisodeId) : BuilderResult;
-        GapData = Highlight is { Mode: HighlightMode.GapView } gap ? Covering(Snapshot.Releases, gap.EpisodeId) : [];
+        GapData = Highlight is { Mode: HighlightMode.GapView } gap ? Covering(Releases, gap.EpisodeId) : [];
     }
 
     private static IReadOnlyList<ReleaseRecord> Covering(IEnumerable<ReleaseRecord> releases, int episodeId) =>

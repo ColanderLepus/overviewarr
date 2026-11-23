@@ -91,6 +91,13 @@ else
                       IsBusy="_sending" BusyText="@_sendProgress" Click="GrabAsync" />
     </div>
 
+    @if (_layoutError is not null)
+    {
+        <RadzenAlert AlertStyle="AlertStyle.Warning" AllowClose="false" Variant="Variant.Flat">
+            Couldn't save the column layout: @_layoutError
+        </RadzenAlert>
+    }
+
     @if (_view.IsGapView)
     {
         <RadzenAlert AlertStyle="AlertStyle.Info" AllowClose="false" Variant="Variant.Flat">
@@ -100,13 +107,13 @@ else
             </RadzenStack>
         </RadzenAlert>
 
-        <ReleaseGrid Data="_view.GapData" AllowFiltering="false" ColumnVisibility="_gapColumns"
-                     Selection="_selection" SelectionChanged="OnSelectionChanged" FailedReleases="_downloads.FailedReleases" />
+        <ReleaseGrid Data="_view.GapData" AllowFiltering="false" LayoutSaved="OnLayoutSaved" HeaderContent="SwitchBar"
+                     Selection="_selection" SelectionChanged="OnSelectionChanged" />
     }
 
     <div class="@(_view.IsGapView ? "hidden" : null)">
-        <ReleaseGrid @ref="_mainGrid" Data="_view.GridData" FilterChanged="Recalculate"
-                     Selection="_selection" SelectionChanged="OnSelectionChanged" FailedReleases="_downloads.FailedReleases" />
+        <ReleaseGrid @ref="_mainGrid" Data="_view.GridData" FilterChanged="Recalculate" LayoutSaved="OnLayoutSaved" HeaderContent="SwitchBar"
+                     Selection="_selection" SelectionChanged="OnSelectionChanged" />
     </div>
 }
 
@@ -139,7 +146,9 @@ else
     private DateTimeOffset _now;
     private RadzenDataFilter<ReleaseRecord>? _filter;
     private ReleaseGrid? _mainGrid;
-    private IReadOnlyDictionary<string, bool>? _gapColumns;
+    private string? _layoutError;
+    private GridSwitches _switches = GridSwitches.Starting;
+    private bool _seasonPacksAvailable;
 
     private readonly HashSet<ReleaseKey> _selection = [];
     private bool _sending;
@@ -173,6 +182,8 @@ else
         _ticked = null;
         _filter = null;
         _view = new SeriesView();
+        _switches = GridSwitches.Starting;
+        _seasonPacksAvailable = false;
         _selection.Clear();
         _redownload = RedownloadState.Checking;
         _profile = null;
@@ -342,16 +353,21 @@ else
 
     private void OnCellClick(CoverageCell cell)
     {
-        var wasGapView = _view.IsGapView;
         if (_view.Click(cell))
         {
             SearchEpisode(cell);
         }
+    }
 
-        if (_view.IsGapView && !wasGapView)
-        {
-            _gapColumns = _mainGrid?.CurrentColumnVisibility();
-        }
+    private void OnLayoutSaved(string? error) => _layoutError = error;
+
+    /// <summary>The grid switches, shown in both grids' header bars (DESIGN.md section 8).</summary>
+    private RenderFragment SwitchBar => @<GridSwitchBar Switches="_switches" SeasonPacksAvailable="_seasonPacksAvailable" Changed="OnSwitchesChanged" />;
+
+    private void OnSwitchesChanged(GridSwitches switches)
+    {
+        _switches = switches;
+        Recalculate();
     }
 
     private void EndGapView() => _view.EndGapView();
@@ -443,17 +459,21 @@ else
         }
     }
 
-    /// <summary>Recalculates the builder's result, the matching set, the strip and the grids.</summary>
+    /// <summary>Recalculates the switches, the builder's result, the matching set, the strip and the grids.</summary>
     private void Recalculate()
     {
         var snapshot = Cache.GetSnapshot(SeriesId);
         _selection.IntersectWith(snapshot.Releases.Select(r => r.Key));
 
-        var builderResult = FilterEvaluator.Apply(snapshot.Releases, _filter?.Filters, _filter?.LogicalFilterOperator ?? LogicalFilterOperator.And);
+        var switched = _switches.Apply(_downloads.MarkFailures(snapshot.Releases));
+        _switches = switched.Switches;
+        _seasonPacksAvailable = switched.SeasonPacksAvailable;
+
+        var builderResult = FilterEvaluator.Apply(switched.Releases, _filter?.Filters, _filter?.LogicalFilterOperator ?? LogicalFilterOperator.And);
         var matching = _mainGrid?.ApplyColumnFilters(builderResult) ?? builderResult;
 
         _now = Time.GetUtcNow();
-        _view.Update(snapshot, builderResult, matching, _now, _selection, _downloads);
+        _view.Update(snapshot, builderResult, matching, _now, _selection, _downloads, switched.Releases);
     }
 
     public void Dispose()

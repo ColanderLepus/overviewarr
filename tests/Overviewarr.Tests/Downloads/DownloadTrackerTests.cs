@@ -1,4 +1,5 @@
 using Overviewarr.Downloads;
+using Overviewarr.Releases;
 using Overviewarr.Sonarr;
 
 namespace Overviewarr.Tests.Downloads;
@@ -128,6 +129,54 @@ public class DownloadTrackerTests
         var failure = Assert.Single(tracker.FailedReleases);
         Assert.Equal("release-guid", failure.Key);
         Assert.Equal("Download failed", failure.Value.Message);
+    }
+
+    [Fact]
+    public void Failed_release_stays_failed_after_a_replacement_with_its_newest_failure()
+    {
+        var tracker = new DownloadTracker(SeriesId, Opened);
+
+        tracker.AddSeriesHistory(
+        [
+            Entry(1, HistoryDto.Grabbed, 101, "dl-1", guid: "release-guid"),
+            Entry(2, HistoryDto.DownloadFailed, 101, "dl-1", message: "First failure", minutesAfterOpen: 1),
+            Entry(3, HistoryDto.Grabbed, 101, "dl-2", guid: "release-guid"),
+            Entry(4, HistoryDto.DownloadFailed, 101, "dl-2", message: "Second failure", minutesAfterOpen: 2),
+            Entry(5, HistoryDto.Grabbed, 101, "dl-3", guid: "replacement-guid"),
+        ]);
+
+        Assert.Empty(tracker.FailedDownloads);
+        var failure = Assert.Single(tracker.FailedReleases);
+        Assert.Equal("release-guid", failure.Key);
+        Assert.Equal(new ReleaseFailure("Second failure", Opened.AddMinutes(2)), failure.Value);
+    }
+
+    [Fact]
+    public void Failures_are_marked_on_the_releases_and_other_releases_are_kept_as_they_are()
+    {
+        var tracker = new DownloadTracker(SeriesId, Opened);
+        tracker.AddSeriesHistory(
+        [
+            Entry(1, HistoryDto.Grabbed, 101, "dl-1", guid: "failed"),
+            Entry(2, HistoryDto.DownloadFailed, 101, "dl-1", message: "Download failed"),
+        ]);
+        var failed = TestReleases.Make("failed");
+        var other = TestReleases.Make("other");
+
+        var marked = tracker.MarkFailures([failed, other]);
+
+        Assert.Equal("Download failed", marked[0].Failure?.Message);
+        Assert.Equal(ReleaseStatus.DownloadFailed, marked[0].Status);
+        Assert.Same(other, marked[1]);
+        Assert.Null(failed.Failure);
+    }
+
+    [Fact]
+    public void Without_failures_the_releases_are_returned_as_they_are()
+    {
+        IReadOnlyList<ReleaseRecord> releases = [TestReleases.Make("a")];
+
+        Assert.Same(releases, new DownloadTracker(SeriesId, Opened).MarkFailures(releases));
     }
 
     [Fact]

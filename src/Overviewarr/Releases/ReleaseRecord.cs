@@ -20,6 +20,20 @@ public readonly record struct ReleaseKey(int IndexerId, string Guid);
 /// <summary>An episode Sonarr matched a release to (<c>mappedEpisodeInfo</c>).</summary>
 public sealed record ReleaseEpisode(int EpisodeId, int SeasonNumber, int EpisodeNumber);
 
+/// <summary>The newest failed download of a release (DESIGN.md section 10): Sonarr's message and the time.</summary>
+public sealed record ReleaseFailure(string? Message, DateTimeOffset Date);
+
+/// <summary>The values of the Status property (DESIGN.md section 8).</summary>
+public static class ReleaseStatus
+{
+    public const string DownloadFailed = "Download failed";
+    public const string RejectedBySonarr = "Rejected by Sonarr";
+    public const string None = "None";
+
+    /// <summary>The Status column's filter when the series page opens: every value except Download failed (DESIGN.md section 8).</summary>
+    public static List<string> StartingFilter() => [RejectedBySonarr, None];
+}
+
 /// <summary>
 /// A normalized release (DESIGN.md section 7). The text properties of the list values back the filter builder
 /// and sorting; the <see cref="Tag"/> lists back the grid's checkbox filters.
@@ -63,7 +77,19 @@ public sealed record ReleaseRecord
 
     public required bool Rejected { get; init; }
 
+    /// <summary>Set by the series page when the release has a failed download in the series' history (DESIGN.md section 10).</summary>
+    public ReleaseFailure? Failure { get; init; }
+
+    /// <summary>One status per release: a failed download comes before a rejection by Sonarr.</summary>
+    public string Status => Failure is not null ? ReleaseStatus.DownloadFailed : Rejected ? ReleaseStatus.RejectedBySonarr : ReleaseStatus.None;
+
     public required IReadOnlyList<string> Rejections { get; init; }
+
+    /// <summary>How Sonarr's rejection reason ends when the series' quality profile doesn't allow the release's quality.</summary>
+    public const string QualityNotWantedReason = "is not wanted in profile";
+
+    /// <summary>Sonarr rejected the release because the series' quality profile doesn't allow its quality (DESIGN.md section 8, Grid switches).</summary>
+    public bool QualityNotWanted => Rejections.Any(r => r.EndsWith(QualityNotWantedReason, StringComparison.Ordinal));
 
     public required IReadOnlyList<Tag> Codec { get; init; }
 

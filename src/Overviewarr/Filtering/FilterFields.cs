@@ -49,7 +49,6 @@ public static class FilterFields
     public static IReadOnlyList<FilterField> All { get; } =
     [
         new("Season", nameof(ReleaseRecord.SeasonText), FilterKind.NumberList, typeof(string), r => r.Seasons.Select(s => s.Number)),
-        new("Season pack", nameof(ReleaseRecord.SeasonPack), FilterKind.YesNo, typeof(bool), r => r.SeasonPack),
         new("Release group", nameof(ReleaseRecord.ReleaseGroup), FilterKind.Text, typeof(string), r => r.ReleaseGroup),
         new("Quality", nameof(ReleaseRecord.Quality), FilterKind.Text, typeof(string), r => r.Quality),
         new("Source", nameof(ReleaseRecord.Source), FilterKind.Text, typeof(string), r => r.Source),
@@ -68,6 +67,7 @@ public static class FilterFields
         new("Age (days)", nameof(ReleaseRecord.Age), FilterKind.Number, typeof(int), r => r.Age),
         new("Proper/repack", nameof(ReleaseRecord.ProperRepack), FilterKind.YesNo, typeof(bool), r => r.ProperRepack),
         new("Rejected by Sonarr", nameof(ReleaseRecord.Rejected), FilterKind.YesNo, typeof(bool), r => r.Rejected),
+        new("Status", nameof(ReleaseRecord.Status), FilterKind.Text, typeof(string), r => r.Status),
         new("Title", nameof(ReleaseRecord.Title), FilterKind.Text, typeof(string), r => r.Title),
     ];
 

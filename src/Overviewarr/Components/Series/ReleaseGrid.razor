@@ -1,13 +1,17 @@
-@* The release grid (DESIGN.md section 8): one row per release, a checkbox filter per column. *@
+@* The release grid (DESIGN.md section 8): one row per release, a checkbox filter per column, and the saved column layout. *@
+@implements IDisposable
+@inject SettingsStore Store
 
 <RadzenDataGrid @ref="Grid" TItem="ReleaseRecord" Data="@Data"
                 AllowFiltering="@AllowFiltering" FilterMode="FilterMode.CheckBoxList"
                 Filter="@OnFilter" FilterCleared="@OnFilter"
                 AllowSorting="true" AllowMultiColumnSorting="true" ShowMultiColumnSortingIndex="true"
-                AllowVirtualization="true" AllowColumnPicking="true" AllowColumnResize="true"
+                AllowVirtualization="true" AllowColumnPicking="true" AllowColumnResize="true" AllowColumnReorder="true"
+                ColumnReordering="@OnColumnReordering" ColumnReordered="@OnColumnReordered"
+                ColumnResized="@OnColumnResized" PickedColumnsChanged="@OnPickedColumnsChanged" HeaderTemplate="@HeaderContent"
                 Density="Density.Compact" EmptyText="No releases" Style="height: 65vh" class="release-grid">
     <Columns>
-        <RadzenDataGridColumn Width="44px" Sortable="false" Filterable="false" Pickable="false" TextAlign="TextAlign.Center">
+        <RadzenDataGridColumn OrderIndex="0" Width="44px" Sortable="false" Filterable="false" Pickable="false" Reorderable="false" Resizable="false" TextAlign="TextAlign.Center">
             <HeaderTemplate>
                 <RadzenCheckBox TValue="bool?" TriState="false" Value="@ShownSelectionState()" Change="@(value => SelectShown(value == true))"
                                 InputAttributes="@SelectShownAttributes" />
@@ -18,9 +22,10 @@
                                 InputAttributes="@SelectOneAttributes" />
             </Template>
         </RadzenDataGridColumn>
-        <RadzenDataGridColumn Width="44px" Sortable="false" Filterable="false" Pickable="false" TextAlign="TextAlign.Center">
+        <RadzenDataGridColumn Title="Status" Property="@nameof(ReleaseRecord.Status)" FilterValue="@(AllowFiltering ? _statusFilter : null)"
+                              OrderIndex="1" Width="96px" Sortable="false" Pickable="false" Reorderable="false" Resizable="false">
             <Template Context="release">
-                @if (FailedReleases.TryGetValue(release.Guid, out var failure))
+                @if (release.Failure is { } failure)
                 {
                     <span class="status-icon failed" title="@FailureTooltip(failure)"><RadzenIcon Icon="error" /></span>
                 }
@@ -31,82 +36,70 @@
             </Template>
         </RadzenDataGridColumn>
 
-        @* Visible by default, in this order. *@
-        <RadzenDataGridColumn Title="Season" Property="@nameof(ReleaseRecord.Seasons)" FilterProperty="@nameof(SeasonTag.Number)"
+        @* In the default order. Order, visibility and width come from the column layout (Defaults below). *@
+        <RadzenDataGridColumn Title="Season" OrderIndex="@Order("Season")" Visible="@Shown("Season")" Width="@Width("Season")" Property="@nameof(ReleaseRecord.Seasons)" FilterProperty="@nameof(SeasonTag.Number)"
                               Type="typeof(IEnumerable<SeasonTag>)" FilterOperator="FilterOperator.In"
-                              SortProperty="@nameof(ReleaseRecord.SeasonSortKey)" Visible="@IsVisible("Season", true)" Width="90px">
+                              SortProperty="@nameof(ReleaseRecord.SeasonSortKey)">
             <Template Context="release">@release.SeasonText</Template>
         </RadzenDataGridColumn>
-        <RadzenDataGridColumn Title="Episodes" Filterable="false" SortProperty="@nameof(ReleaseRecord.EpisodesSortKey)"
-                              Visible="@IsVisible("Episodes", true)" Width="210px">
-            <Template Context="release">
-                <span class="episodes">
-                    <span>@release.EpisodesText</span>
-                    @if (release.SeasonPack)
-                    {
-                        <RadzenBadge BadgeStyle="BadgeStyle.Info" IsPill="true" Text="Season pack" class="season-pack" />
-                    }
-                </span>
-            </Template>
+        <RadzenDataGridColumn Title="Episodes" OrderIndex="@Order("Episodes")" Visible="@Shown("Episodes")" Width="@Width("Episodes")" Filterable="false" SortProperty="@nameof(ReleaseRecord.EpisodesSortKey)">
+            <Template Context="release">@release.EpisodesText</Template>
         </RadzenDataGridColumn>
-        <RadzenDataGridColumn Title="Release group" Property="@nameof(ReleaseRecord.ReleaseGroup)" Visible="@IsVisible("Release group", true)" Width="140px" />
-        <RadzenDataGridColumn Title="Quality" Property="@nameof(ReleaseRecord.Quality)" Visible="@IsVisible("Quality", true)" Width="130px" />
-        <RadzenDataGridColumn Title="Codec" Property="@nameof(ReleaseRecord.Codec)" FilterProperty="@nameof(Tag.Name)"
+        <RadzenDataGridColumn Title="Release group" OrderIndex="@Order("Release group")" Visible="@Shown("Release group")" Width="@Width("Release group")" Property="@nameof(ReleaseRecord.ReleaseGroup)" />
+        <RadzenDataGridColumn Title="Quality" OrderIndex="@Order("Quality")" Visible="@Shown("Quality")" Width="@Width("Quality")" Property="@nameof(ReleaseRecord.Quality)" />
+        <RadzenDataGridColumn Title="Codec" OrderIndex="@Order("Codec")" Visible="@Shown("Codec")" Width="@Width("Codec")" Property="@nameof(ReleaseRecord.Codec)" FilterProperty="@nameof(Tag.Name)"
                               Type="typeof(IEnumerable<Tag>)" FilterOperator="FilterOperator.In"
-                              SortProperty="@nameof(ReleaseRecord.CodecText)" Visible="@IsVisible("Codec", true)" Width="100px">
+                              SortProperty="@nameof(ReleaseRecord.CodecText)">
             <Template Context="release">@release.CodecText</Template>
         </RadzenDataGridColumn>
-        <RadzenDataGridColumn Title="HDR" Property="@nameof(ReleaseRecord.Hdr)" FilterProperty="@nameof(Tag.Name)"
+        <RadzenDataGridColumn Title="HDR" OrderIndex="@Order("HDR")" Visible="@Shown("HDR")" Width="@Width("HDR")" Property="@nameof(ReleaseRecord.Hdr)" FilterProperty="@nameof(Tag.Name)"
                               Type="typeof(IEnumerable<Tag>)" FilterOperator="FilterOperator.In"
-                              SortProperty="@nameof(ReleaseRecord.HdrText)" Visible="@IsVisible("HDR", true)" Width="120px">
+                              SortProperty="@nameof(ReleaseRecord.HdrText)">
             <Template Context="release">@release.HdrText</Template>
         </RadzenDataGridColumn>
-        <RadzenDataGridColumn Title="Audio format" Property="@nameof(ReleaseRecord.AudioFormat)" FilterProperty="@nameof(Tag.Name)"
+        <RadzenDataGridColumn Title="Audio format" OrderIndex="@Order("Audio format")" Visible="@Shown("Audio format")" Width="@Width("Audio format")" Property="@nameof(ReleaseRecord.AudioFormat)" FilterProperty="@nameof(Tag.Name)"
                               Type="typeof(IEnumerable<Tag>)" FilterOperator="FilterOperator.In"
-                              SortProperty="@nameof(ReleaseRecord.AudioFormatText)" Visible="@IsVisible("Audio format", true)" Width="120px">
+                              SortProperty="@nameof(ReleaseRecord.AudioFormatText)">
             <Template Context="release">@release.AudioFormatText</Template>
         </RadzenDataGridColumn>
-        <RadzenDataGridColumn Title="Audio channels" Property="@nameof(ReleaseRecord.AudioChannels)" FilterProperty="@nameof(Tag.Name)"
+        <RadzenDataGridColumn Title="Audio channels" OrderIndex="@Order("Audio channels")" Visible="@Shown("Audio channels")" Width="@Width("Audio channels")" Property="@nameof(ReleaseRecord.AudioChannels)" FilterProperty="@nameof(Tag.Name)"
                               Type="typeof(IEnumerable<Tag>)" FilterOperator="FilterOperator.In"
-                              SortProperty="@nameof(ReleaseRecord.AudioChannelsText)" Visible="@IsVisible("Audio channels", true)" Width="125px">
+                              SortProperty="@nameof(ReleaseRecord.AudioChannelsText)">
             <Template Context="release">@release.AudioChannelsText</Template>
         </RadzenDataGridColumn>
-        <RadzenDataGridColumn Title="Streaming service" Property="@nameof(ReleaseRecord.StreamingService)" FilterProperty="@nameof(Tag.Name)"
+        <RadzenDataGridColumn Title="Streaming service" OrderIndex="@Order("Streaming service")" Visible="@Shown("Streaming service")" Width="@Width("Streaming service")" Property="@nameof(ReleaseRecord.StreamingService)" FilterProperty="@nameof(Tag.Name)"
                               Type="typeof(IEnumerable<Tag>)" FilterOperator="FilterOperator.In"
-                              SortProperty="@nameof(ReleaseRecord.StreamingServiceText)" Visible="@IsVisible("Streaming service", true)" Width="130px">
+                              SortProperty="@nameof(ReleaseRecord.StreamingServiceText)">
             <Template Context="release">@release.StreamingServiceText</Template>
         </RadzenDataGridColumn>
-        <RadzenDataGridColumn Title="Size per episode" Property="@nameof(ReleaseRecord.SizePerEpisode)" Visible="@IsVisible("Size per episode", true)"
-                              FormatString="{0:GB}" FormatProvider="DisplayFormat.Instance" TextAlign="TextAlign.Right" Width="120px" />
-        <RadzenDataGridColumn Title="Age" Property="@nameof(ReleaseRecord.Age)" Visible="@IsVisible("Age", true)"
-                              FormatString="{0:days}" FormatProvider="DisplayFormat.Instance" TextAlign="TextAlign.Right" Width="90px" />
-        <RadzenDataGridColumn Title="Indexer" Property="@nameof(ReleaseRecord.Indexer)" Visible="@IsVisible("Indexer", true)" Width="130px" />
+        <RadzenDataGridColumn Title="Size per episode" OrderIndex="@Order("Size per episode")" Visible="@Shown("Size per episode")" Width="@Width("Size per episode")" Property="@nameof(ReleaseRecord.SizePerEpisode)"
+                              FormatString="{0:GB}" FormatProvider="DisplayFormat.Instance" TextAlign="TextAlign.Right" />
+        <RadzenDataGridColumn Title="Age" OrderIndex="@Order("Age")" Visible="@Shown("Age")" Width="@Width("Age")" Property="@nameof(ReleaseRecord.Age)"
+                              FormatString="{0:days}" FormatProvider="DisplayFormat.Instance" TextAlign="TextAlign.Right" />
+        <RadzenDataGridColumn Title="Indexer" OrderIndex="@Order("Indexer")" Visible="@Shown("Indexer")" Width="@Width("Indexer")" Property="@nameof(ReleaseRecord.Indexer)" />
 
-        @* Shown through the column picker. *@
-        <RadzenDataGridColumn Title="Season pack" Property="@nameof(ReleaseRecord.SeasonPack)" Visible="@IsVisible("Season pack", false)"
-                              FormatString="{0:yesno}" FormatProvider="DisplayFormat.Instance" Width="110px" />
-        <RadzenDataGridColumn Title="Source" Property="@nameof(ReleaseRecord.Source)" Visible="@IsVisible("Source", false)" Width="110px" />
-        <RadzenDataGridColumn Title="Resolution" Property="@nameof(ReleaseRecord.Resolution)" Visible="@IsVisible("Resolution", false)"
-                              TextAlign="TextAlign.Right" Width="100px" />
-        <RadzenDataGridColumn Title="Languages" Property="@nameof(ReleaseRecord.Languages)" FilterProperty="@nameof(Tag.Name)"
+        <RadzenDataGridColumn Title="Source" OrderIndex="@Order("Source")" Visible="@Shown("Source")" Width="@Width("Source")" Property="@nameof(ReleaseRecord.Source)" />
+        <RadzenDataGridColumn Title="Resolution" OrderIndex="@Order("Resolution")" Visible="@Shown("Resolution")" Width="@Width("Resolution")" Property="@nameof(ReleaseRecord.Resolution)"
+                              TextAlign="TextAlign.Right" />
+        <RadzenDataGridColumn Title="Languages" OrderIndex="@Order("Languages")" Visible="@Shown("Languages")" Width="@Width("Languages")" Property="@nameof(ReleaseRecord.Languages)" FilterProperty="@nameof(Tag.Name)"
                               Type="typeof(IEnumerable<Tag>)" FilterOperator="FilterOperator.In"
-                              SortProperty="@nameof(ReleaseRecord.LanguagesText)" Visible="@IsVisible("Languages", false)" Width="130px">
+                              SortProperty="@nameof(ReleaseRecord.LanguagesText)">
             <Template Context="release">@release.LanguagesText</Template>
         </RadzenDataGridColumn>
-        <RadzenDataGridColumn Title="Custom formats" Property="@nameof(ReleaseRecord.CustomFormats)" FilterProperty="@nameof(Tag.Name)"
+        <RadzenDataGridColumn Title="Custom formats" OrderIndex="@Order("Custom formats")" Visible="@Shown("Custom formats")" Width="@Width("Custom formats")" Property="@nameof(ReleaseRecord.CustomFormats)" FilterProperty="@nameof(Tag.Name)"
                               Type="typeof(IEnumerable<Tag>)" FilterOperator="FilterOperator.In"
-                              SortProperty="@nameof(ReleaseRecord.CustomFormatsText)" Visible="@IsVisible("Custom formats", false)" Width="160px">
+                              SortProperty="@nameof(ReleaseRecord.CustomFormatsText)">
             <Template Context="release">@release.CustomFormatsText</Template>
         </RadzenDataGridColumn>
-        <RadzenDataGridColumn Title="Custom format score" Property="@nameof(ReleaseRecord.CustomFormatScore)" Visible="@IsVisible("Custom format score", false)"
-                              TextAlign="TextAlign.Right" Width="110px" />
-        <RadzenDataGridColumn Title="Size" Property="@nameof(ReleaseRecord.Size)" Visible="@IsVisible("Size", false)"
-                              FormatString="{0:GB}" FormatProvider="DisplayFormat.Instance" TextAlign="TextAlign.Right" Width="110px" />
-        <RadzenDataGridColumn Title="Proper/repack" Property="@nameof(ReleaseRecord.ProperRepack)" Visible="@IsVisible("Proper/repack", false)"
-                              FormatString="{0:yesno}" FormatProvider="DisplayFormat.Instance" Width="110px" />
-        <RadzenDataGridColumn Title="Rejected by Sonarr" Property="@nameof(ReleaseRecord.Rejected)" Visible="@IsVisible("Rejected by Sonarr", false)"
-                              FormatString="{0:yesno}" FormatProvider="DisplayFormat.Instance" Width="110px" />
-        <RadzenDataGridColumn Title="Title" Property="@nameof(ReleaseRecord.Title)" Visible="@IsVisible("Title", false)" Width="420px" />
+        <RadzenDataGridColumn Title="Custom format score" OrderIndex="@Order("Custom format score")" Visible="@Shown("Custom format score")" Width="@Width("Custom format score")" Property="@nameof(ReleaseRecord.CustomFormatScore)"
+                              TextAlign="TextAlign.Right" />
+        <RadzenDataGridColumn Title="Size" OrderIndex="@Order("Size")" Visible="@Shown("Size")" Width="@Width("Size")" Property="@nameof(ReleaseRecord.Size)"
+                              FormatString="{0:GB}" FormatProvider="DisplayFormat.Instance" TextAlign="TextAlign.Right" />
+        <RadzenDataGridColumn Title="Proper/repack" OrderIndex="@Order("Proper/repack")" Visible="@Shown("Proper/repack")" Width="@Width("Proper/repack")" Property="@nameof(ReleaseRecord.ProperRepack)"
+                              FormatString="{0:yesno}" FormatProvider="DisplayFormat.Instance" />
+        <RadzenDataGridColumn Title="Rejected by Sonarr" OrderIndex="@Order("Rejected by Sonarr")" Visible="@Shown("Rejected by Sonarr")" Width="@Width("Rejected by Sonarr")" Property="@nameof(ReleaseRecord.Rejected)"
+                              FormatString="{0:yesno}" FormatProvider="DisplayFormat.Instance" />
+        <RadzenDataGridColumn Title="Title" OrderIndex="@Order("Title")" Visible="@Shown("Title")" Width="@Width("Title")" Property="@nameof(ReleaseRecord.Title)" />
     </Columns>
 </RadzenDataGrid>
 
@@ -115,19 +108,19 @@
 
     [Parameter] public bool AllowFiltering { get; set; } = true;
 
-    /// <summary>Which columns to show, by title. Columns not listed use their default.</summary>
-    [Parameter] public IReadOnlyDictionary<string, bool>? ColumnVisibility { get; set; }
-
     /// <summary>Raised after a column filter is applied or cleared.</summary>
     [Parameter] public EventCallback FilterChanged { get; set; }
+
+    /// <summary>Raised after saving the column layout: the error message, or null when it was saved.</summary>
+    [Parameter] public EventCallback<string?> LayoutSaved { get; set; }
 
     /// <summary>The page's selection (DESIGN.md section 9).</summary>
     [Parameter, EditorRequired] public IReadOnlySet<ReleaseKey> Selection { get; set; } = new HashSet<ReleaseKey>();
 
     [Parameter] public EventCallback<SelectionChange> SelectionChanged { get; set; }
 
-    /// <summary>Failed downloads by release <c>guid</c> (DESIGN.md section 10).</summary>
-    [Parameter] public IReadOnlyDictionary<string, FailedDownload> FailedReleases { get; set; } = new Dictionary<string, FailedDownload>();
+    /// <summary>Shown in the grid's header bar, next to the column picker: the grid switches (DESIGN.md section 8).</summary>
+    [Parameter] public RenderFragment? HeaderContent { get; set; }
 
     public RadzenDataGrid<ReleaseRecord>? Grid { get; private set; }
 
@@ -148,23 +141,122 @@
     private Task SelectShown(bool select) =>
         SelectionChanged.InvokeAsync(new SelectionChange(Shown().Select(r => r.Key).ToList(), select));
 
-    /// <summary>The grid's current column visibility, by title.</summary>
-    public IReadOnlyDictionary<string, bool> CurrentColumnVisibility() =>
-        Grid?.ColumnsCollection.Where(c => !string.IsNullOrEmpty(c.Title)).ToDictionary(c => c.Title, c => c.GetVisible())
-        ?? new Dictionary<string, bool>();
-
     /// <summary>Applies this grid's column filters to releases, the same way the grid does.</summary>
     public IReadOnlyList<ReleaseRecord> ApplyColumnFilters(IReadOnlyList<ReleaseRecord> releases) =>
         Grid is null ? releases : releases.AsQueryable().Where(Grid.ColumnsCollection).ToList();
 
-    private bool IsVisible(string title, bool byDefault) =>
-        ColumnVisibility is not null && ColumnVisibility.TryGetValue(title, out var visible) ? visible : byDefault;
+    /// <summary>The columns after the selection checkbox and the Status column, by title: default visibility and width, in the default order.</summary>
+    private static readonly ColumnLayout[] Defaults =
+    [
+        new("Season", true, "90px"),
+        new("Episodes", true, "210px"),
+        new("Release group", true, "140px"),
+        new("Quality", true, "130px"),
+        new("Codec", true, "100px"),
+        new("HDR", true, "120px"),
+        new("Audio format", true, "120px"),
+        new("Audio channels", true, "125px"),
+        new("Streaming service", true, "130px"),
+        new("Size per episode", true, "120px"),
+        new("Age", true, "90px"),
+        new("Indexer", true, "130px"),
+        new("Source", false, "110px"),
+        new("Resolution", false, "100px"),
+        new("Languages", false, "130px"),
+        new("Custom formats", false, "160px"),
+        new("Custom format score", false, "110px"),
+        new("Size", false, "110px"),
+        new("Proper/repack", false, "110px"),
+        new("Rejected by Sonarr", false, "110px"),
+        new("Title", false, "420px"),
+    ];
+
+    /// <summary>The selection checkbox and the Status column, always first.</summary>
+    private const int FixedColumns = 2;
+
+    /// <summary>The Status column's starting filter, this grid's own copy.</summary>
+    private readonly List<string> _statusFilter = ReleaseStatus.StartingFilter();
+
+    private Dictionary<string, (int OrderIndex, ColumnLayout Column)> _layout = [];
+
+    protected override void OnInitialized()
+    {
+        ApplyLayout();
+        Store.ColumnLayoutChanged += OnColumnLayoutChanged;
+    }
+
+    private void ApplyLayout() =>
+        _layout = ColumnLayouts.Resolve(Defaults, Store.ColumnLayout)
+            .Select((column, index) => (column, index))
+            .ToDictionary(x => x.column.Title, x => (FixedColumns + x.index, x.column));
+
+    private int Order(string title) => _layout[title].OrderIndex;
+
+    private bool Shown(string title) => _layout[title].Column.Visible;
+
+    private string? Width(string title) => _layout[title].Column.Width;
+
+    private void OnColumnLayoutChanged() => _ = InvokeAsync(() =>
+    {
+        ApplyLayout();
+
+        // A width set by resizing takes precedence over the Width parameter, so the layout's widths need it cleared.
+        foreach (var column in Grid?.ColumnsCollection ?? [])
+        {
+            column.SetWidth(null);
+        }
+
+        StateHasChanged();
+    });
+
+    /// <summary>Keeps the selection checkbox and the status icon first: nothing is dropped on them.</summary>
+    private static void OnColumnReordering(DataGridColumnReorderingEventArgs<ReleaseRecord> args)
+    {
+        if (args.Column?.Reorderable != true || args.ToColumn?.Reorderable != true)
+        {
+            args.Cancel = true;
+        }
+    }
+
+    private Task OnColumnReordered(DataGridColumnReorderedEventArgs<ReleaseRecord> _) => SaveLayoutAsync();
+
+    private Task OnColumnResized(DataGridColumnResizedEventArgs<ReleaseRecord> _) => SaveLayoutAsync();
+
+    private Task OnPickedColumnsChanged(DataGridPickedColumnsChangedEventArgs<ReleaseRecord> _) => SaveLayoutAsync();
+
+    /// <summary>Saves the grid's current column order, visibility and widths (DESIGN.md section 8).</summary>
+    private async Task SaveLayoutAsync()
+    {
+        if (Grid is null)
+        {
+            return;
+        }
+
+        var layout = Grid.ColumnsCollection
+            .Where(c => _layout.ContainsKey(c.Title))
+            .Select(c => new ColumnLayout(c.Title, c.GetVisible(), c.GetWidth()))
+            .ToList();
+
+        string? error = null;
+        try
+        {
+            await Store.SaveColumnLayoutAsync(layout);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            error = exception.Message;
+        }
+
+        await LayoutSaved.InvokeAsync(error);
+    }
 
     private Task OnFilter(DataGridColumnFilterEventArgs<ReleaseRecord> _) => FilterChanged.InvokeAsync();
 
-    private static string FailureTooltip(FailedDownload failure) =>
+    private static string FailureTooltip(ReleaseFailure failure) =>
         string.IsNullOrWhiteSpace(failure.Message) ? "Download failed" : $"Download failed: {failure.Message}";
 
     private static string RejectionTooltip(ReleaseRecord release) =>
         "Rejected by Sonarr:\n" + string.Join("\n", release.Rejections.Select(r => "• " + r));
+
+    public void Dispose() => Store.ColumnLayoutChanged -= OnColumnLayoutChanged;
 }

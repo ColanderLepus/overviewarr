@@ -103,7 +103,7 @@ public class RadzenFilteringTests
             new() { Property = nameof(ReleaseRecord.HdrText), FilterValue = "HDR", FilterOperator = FilterOperator.DoesNotContain },
             new() { Property = nameof(ReleaseRecord.SizePerEpisodeGb), FilterValue = 2.0, FilterOperator = FilterOperator.LessThan },
             new() { Property = nameof(ReleaseRecord.Resolution), FilterValue = 1080, FilterOperator = FilterOperator.Equals },
-            new() { Property = nameof(ReleaseRecord.SeasonPack), FilterValue = false, FilterOperator = FilterOperator.Equals },
+            new() { Property = nameof(ReleaseRecord.ProperRepack), FilterValue = false, FilterOperator = FilterOperator.Equals },
             new() { Property = nameof(ReleaseRecord.SeasonText), FilterValue = "1", FilterOperator = FilterOperator.Contains },
         ];
 

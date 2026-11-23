@@ -54,13 +54,13 @@ public class FilterEvaluatorTests
     [Fact]
     public void Yes_no_condition_compares()
     {
-        ReleaseRecord[] releases = [TestReleases.Make("pack", seasonPack: true), TestReleases.Make("single", seasonPack: false)];
+        ReleaseRecord[] releases = [TestReleases.Make("repack", revision: 2), TestReleases.Make("original", revision: 1)];
 
-        var packs = FilterEvaluator.Apply(releases, [Condition(nameof(ReleaseRecord.SeasonPack), FilterOperator.Equals, true)], LogicalFilterOperator.And);
-        var singles = FilterEvaluator.Apply(releases, [Condition(nameof(ReleaseRecord.SeasonPack), FilterOperator.Equals, false)], LogicalFilterOperator.And);
+        var repacks = FilterEvaluator.Apply(releases, [Condition(nameof(ReleaseRecord.ProperRepack), FilterOperator.Equals, true)], LogicalFilterOperator.And);
+        var originals = FilterEvaluator.Apply(releases, [Condition(nameof(ReleaseRecord.ProperRepack), FilterOperator.Equals, false)], LogicalFilterOperator.And);
 
-        Assert.Equal(["pack"], packs.Select(r => r.Guid));
-        Assert.Equal(["single"], singles.Select(r => r.Guid));
+        Assert.Equal(["repack"], repacks.Select(r => r.Guid));
+        Assert.Equal(["original"], originals.Select(r => r.Guid));
     }
 
     [Fact]
