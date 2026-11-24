@@ -74,6 +74,13 @@ else
 
     <CoverageStrip Coverage="_view.Coverage" Highlight="_view.Highlight" Now="_now" CellClick="OnCellClick" SearchMissing="SearchMissing" />
 
+    @if (_view.Snapshot.Releases.Count > 0)
+    {
+        <div class="combinations">
+            <CombinationsPanel Combinations="_combinations" Select="OnCombinationSelected" />
+        </div>
+    }
+
     <div class="filter-builder">
         <RadzenDataFilter @ref="_filter" TItem="ReleaseRecord" Data="@_view.Snapshot.Releases" Auto="true" ViewChanged="OnFilterChanged">
             <Properties>
@@ -149,6 +156,7 @@ else
     private string? _layoutError;
     private GridSwitches _switches = GridSwitches.Starting;
     private bool _seasonPacksAvailable;
+    private IReadOnlyList<Combination> _combinations = [];
 
     private readonly HashSet<ReleaseKey> _selection = [];
     private bool _sending;
@@ -184,6 +192,7 @@ else
         _view = new SeriesView();
         _switches = GridSwitches.Starting;
         _seasonPacksAvailable = false;
+        _combinations = [];
         _selection.Clear();
         _redownload = RedownloadState.Checking;
         _profile = null;
@@ -374,17 +383,13 @@ else
 
     private void OnSelectionChanged(SelectionChange change)
     {
-        if (change.Selected)
-        {
-            _selection.UnionWith(change.Keys);
-        }
-        else
-        {
-            _selection.ExceptWith(change.Keys);
-        }
-
+        change.ApplyTo(_selection);
         Recalculate();
     }
+
+    /// <summary>A combination's Select button: adds its picked releases to the selection (DESIGN.md section 8, Combinations).</summary>
+    private void OnCombinationSelected(Combination combination) =>
+        OnSelectionChanged(new SelectionChange(combination.Picks.Select(r => r.Key).ToList(), Selected: true));
 
     private async Task GrabAsync()
     {
@@ -459,7 +464,7 @@ else
         }
     }
 
-    /// <summary>Recalculates the switches, the builder's result, the matching set, the strip and the grids.</summary>
+    /// <summary>Recalculates the switches, the builder's result, the matching set, the combinations, the strip and the grids.</summary>
     private void Recalculate()
     {
         var snapshot = Cache.GetSnapshot(SeriesId);
@@ -469,12 +474,20 @@ else
         _switches = switched.Switches;
         _seasonPacksAvailable = switched.SeasonPacksAvailable;
 
-        var builderResult = FilterEvaluator.Apply(switched.Releases, _filter?.Filters, _filter?.LogicalFilterOperator ?? LogicalFilterOperator.And);
-        var matching = _mainGrid?.ApplyColumnFilters(builderResult) ?? builderResult;
+        var builderResult = ApplyFilterBuilder(switched.Releases);
+        var matching = ApplyColumnFilters(builderResult);
 
         _now = Time.GetUtcNow();
         _view.Update(snapshot, builderResult, matching, _now, _selection, _downloads, switched.Releases);
+        _combinations = CombinationFinder.Find(ApplyColumnFilters(ApplyFilterBuilder(switched.AllKinds)), _view.Episodes, _now);
     }
+
+    private IReadOnlyList<ReleaseRecord> ApplyFilterBuilder(IReadOnlyList<ReleaseRecord> releases) =>
+        FilterEvaluator.Apply(releases, _filter?.Filters, _filter?.LogicalFilterOperator ?? LogicalFilterOperator.And);
+
+    /// <summary>Applies the main grid's column filters, the same way the grid does.</summary>
+    private IReadOnlyList<ReleaseRecord> ApplyColumnFilters(IReadOnlyList<ReleaseRecord> releases) =>
+        _mainGrid?.ApplyColumnFilters(releases) ?? releases;
 
     public void Dispose()
     {

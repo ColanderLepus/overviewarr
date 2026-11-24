@@ -95,4 +95,14 @@ public class GridSwitchesTests
 
         Assert.True(result.Switches.SeasonPacks);
     }
+
+    [Fact]
+    public void All_kinds_has_season_packs_and_single_episodes_whichever_the_select_bar_shows()
+    {
+        Assert.Equal(["single", "single-rejected", "pack"], GridSwitches.Starting.Apply(Releases).AllKinds.Select(r => r.Guid));
+        Assert.Equal(["single", "single-rejected", "pack"], new GridSwitches(SeasonPacks: true).Apply(Releases).AllKinds.Select(r => r.Guid));
+        Assert.Equal(
+            ["single", "single-rejected", "single-unwanted", "pack", "pack-unwanted"],
+            new GridSwitches(ShowUnwantedQualities: true).Apply(Releases).AllKinds.Select(r => r.Guid));
+    }
 }

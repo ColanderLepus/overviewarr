@@ -21,9 +21,17 @@ public sealed record GridSwitches(bool SeasonPacks = false, bool ShowUnwantedQua
         var seasonPacksAvailable = allowed.Any(r => r.SeasonPack);
         var switches = SeasonPacks && !seasonPacksAvailable ? this with { SeasonPacks = false } : this;
 
-        return new GridSwitchResult(switches, seasonPacksAvailable, allowed.Where(r => r.SeasonPack == switches.SeasonPacks).ToList());
+        return new GridSwitchResult(switches, seasonPacksAvailable, allowed.Where(r => r.SeasonPack == switches.SeasonPacks).ToList(), allowed);
     }
 }
 
-/// <summary>The switches in effect, whether Season packs can be chosen, and the releases the switches let through.</summary>
-public sealed record GridSwitchResult(GridSwitches Switches, bool SeasonPacksAvailable, IReadOnlyList<ReleaseRecord> Releases);
+/// <summary>
+/// The switches in effect, whether Season packs can be chosen, and the releases the switches let through. AllKinds
+/// are the releases Show unwanted qualities lets through, season packs and single episodes alike, which the
+/// combinations use (DESIGN.md section 8, Combinations).
+/// </summary>
+public sealed record GridSwitchResult(
+    GridSwitches Switches,
+    bool SeasonPacksAvailable,
+    IReadOnlyList<ReleaseRecord> Releases,
+    IReadOnlyList<ReleaseRecord> AllKinds);

@@ -1,0 +1,31 @@
+@* The combinations panel (DESIGN.md section 8, Combinations): combinations of releases that cover whole seasons. *@
+
+@* The height fits the header and 8 compact rows (25 px and 29 px each); more rows scroll. *@
+<RadzenDataGrid TItem="Combination" Data="@Combinations" Density="Density.Compact" EmptyText="No combination covers a whole season."
+                Style="max-height: 16.125rem">
+    <Columns>
+        <RadzenDataGridColumn Title="Complete seasons" Width="200px">
+            <Template Context="combination"><span title="@combination.SeasonsText">@combination.SeasonsText</span></Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn Title="Release group" Property="@nameof(Combination.ReleaseGroup)" Width="140px" />
+        <RadzenDataGridColumn Title="Quality" Property="@nameof(Combination.Quality)" Width="130px" />
+        <RadzenDataGridColumn Title="Codec" Property="@nameof(Combination.Codec)" Width="100px" />
+        <RadzenDataGridColumn Title="HDR" Property="@nameof(Combination.Hdr)" Width="120px" />
+        <RadzenDataGridColumn Title="Audio format" Property="@nameof(Combination.AudioFormat)" Width="120px" />
+        <RadzenDataGridColumn Title="Audio channels" Property="@nameof(Combination.AudioChannels)" Width="125px" />
+        <RadzenDataGridColumn Title="Streaming service" Property="@nameof(Combination.StreamingService)" Width="130px" />
+        <RadzenDataGridColumn Width="90px" TextAlign="TextAlign.Center">
+            <Template Context="combination">
+                <RadzenButton Text="Select" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.ExtraSmall"
+                              Click="@(() => Select.InvokeAsync(combination))" />
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<Combination> Combinations { get; set; } = [];
+
+    /// <summary>Raised by a combination's Select button.</summary>
+    [Parameter] public EventCallback<Combination> Select { get; set; }
+}
